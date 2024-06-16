@@ -12,7 +12,7 @@ provider "aws" {
   region = "eu-west-1"
 }
 
-// VPC Setup
+// VPC
 
 resource "aws_vpc" "vpc" {
   cidr_block = "10.0.0.0/16"
@@ -122,6 +122,7 @@ resource "aws_security_group" "AlbToEcsSg" {
     Name = "AlbToEcsSg"
   }
 }
+
 // ALB
 resource "aws_lb" "ApplicationLoadBalancer" {
   name               = "ApplicationLoadBalancer"
@@ -142,7 +143,7 @@ resource "aws_lb_target_group" "TargetGroup" {
   vpc_id      = aws_vpc.vpc.id
 
   tags = {
-    Name = "TargetGroup"
+    Name = "TargetGroup" 
   }
 }
 resource "aws_alb_listener" "Listener" {
@@ -155,61 +156,59 @@ resource "aws_alb_listener" "Listener" {
     type             = "forward"
   }
 }
+
+
 // ECS
-# resource "aws_ecs_cluster" "EcsCluster" {
-#   name = "EcsCluster"
+resource "aws_ecs_cluster" "EcsCluster" {
+  name = "EcsCluster"
 
-#   tags = {
-#     Name = "EcsCluster"
-#   }
-# } 
+  tags = {
+    Name = "EcsCluster"
+  }
+} 
 
-# resource "aws_ecs_task_definition" "TaskDefinition" {
-#   family                   = "TaskDefinition"
-#   requires_compatibilities = ["FARGATE"]
-#   execution_role_arn       = aws_iam_role.iam-role.arn
-#   network_mode             = "awsvpc"
-#   cpu                      = 256
-#   memory                   = 512
-#   container_definitions = jsonencode([
-#     {
-#       name      = "restfastapi"
-#       image     = "public.ecr.aws/j4x1k7z4/restfastapi:latest"
-#       cpu       = 0
-#       essential = true
-#       portMappings = [
-#         {
-#           containerPort = 80
-#           hostPort      = 80
-#         }
-#       ]
-#     }
-#   ])
-# }
+resource "aws_ecs_task_definition" "TaskDefinition" {
+  family                   = "TaskDefinition"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 256
+  memory                   = 512
+  container_definitions = jsonencode([
+    {
+      name      = "restfastapi"
+      image     = "public.ecr.aws/j4x1k7z4/restfastapi:latest"
+      cpu       = 0
+      essential = true
+      portMappings = [
+        {
+          containerPort = 80
+          hostPort      = 80
+        }
+      ]
+    }
+  ])
+}
 
-# resource "aws_ecs_service" "ECSService" {
-#   name                               = "ECSService"
-#   launch_type                        = "FARGATE"
-#   platform_version                   = "LATEST"
-#   cluster                            = aws_ecs_cluster.EcsCluster.id
-#   task_definition                    = aws_ecs_task_definition.TaskDefinition.arn
-#   scheduling_strategy                = "REPLICA"
-#   desired_count                      = 2
-#   deployment_minimum_healthy_percent = 100
-#   deployment_maximum_percent         = 200
-#   //depends_on                         = [aws_alb_listener.Listener, aws_iam_role.iam-role]
+resource "aws_ecs_service" "ECSService" {
+  name                               = "ECSService"
+  launch_type                        = "FARGATE"
+  platform_version                   = "LATEST"
+  cluster                            = aws_ecs_cluster.EcsCluster.id
+  task_definition                    = aws_ecs_task_definition.TaskDefinition.arn
+  scheduling_strategy                = "REPLICA"
+  desired_count                      = 2
+  deployment_minimum_healthy_percent = 100
+  deployment_maximum_percent         = 200
 
+  load_balancer {
+    target_group_arn = aws_lb_target_group.TargetGroup.arn
+    container_name   = "restfastapi"
+    container_port   = 80
+  }
 
-#   load_balancer {
-#     target_group_arn = aws_lb_target_group.TG.arn
-#     container_name   = "restfastapi"
-#     container_port   = 80
-#   }
-
-
-#   network_configuration {
-#     assign_public_ip = true
-#     security_groups  = [aws_security_group.SG.id]
-#     subnets          = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]
-#   }
-# }
+  network_configuration {
+    assign_public_ip = true
+    security_groups  = [aws_security_group.AlbToEcsSg.id]
+    subnets          = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]
+  }
+}
