@@ -196,7 +196,7 @@ resource "aws_ecs_service" "ECSService" {
   cluster                            = aws_ecs_cluster.EcsCluster.id
   task_definition                    = aws_ecs_task_definition.TaskDefinition.arn
   scheduling_strategy                = "REPLICA"
-  desired_count                      = 2
+  desired_count                      = 1
   deployment_minimum_healthy_percent = 100
   deployment_maximum_percent         = 200
 
