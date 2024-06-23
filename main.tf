@@ -45,6 +45,7 @@ resource "aws_subnet" "subnet2" {
   }
 }
 
+
 resource "aws_internet_gateway" "IG" {
   vpc_id = aws_vpc.vpc.id
 
@@ -121,6 +122,50 @@ resource "aws_security_group" "AlbToEcsSg" {
   tags = {
     Name = "AlbToEcsSg"
   }
+}
+resource "aws_security_group" "EcsToRdsSg" {
+  name        = "EcsToRdsSg"
+  description = "Allow mysql traffic from ecs"
+  vpc_id      = aws_vpc.vpc.id
+
+  ingress {
+    from_port   = 3306
+    to_port     = 3306
+    protocol    = "tcp"
+    security_groups = [aws_security_group.AlbToEcsSg.id]
+  }
+
+  egress {
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name = "EcsToRdsSg"
+  }
+}
+// RDS
+resource "aws_db_subnet_group" "RdsSubnetGroup" {
+  name       = "rds_subnet_group"
+  subnet_ids = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]
+
+  tags = {
+    Name = "RdsSubnetGroup"
+  }
+}
+resource "aws_db_instance" "default" {
+  allocated_storage    = 10
+  engine               = "mysql"
+  instance_class       = "db.t3.micro"
+  db_name                 = "mydb"
+  username             = "admin"
+  password             = "password"
+  parameter_group_name = "default.mysql8.0"
+  skip_final_snapshot  = true
+  vpc_security_group_ids = [aws_security_group.EcsToRdsSg.id]
+  db_subnet_group_name = aws_db_subnet_group.RdsSubnetGroup.name
 }
 
 // ALB
@@ -210,5 +255,32 @@ resource "aws_ecs_service" "ECSService" {
     assign_public_ip = true
     security_groups  = [aws_security_group.AlbToEcsSg.id]
     subnets          = [aws_subnet.subnet1.id, aws_subnet.subnet2.id]
+  }
+}
+
+// ECS Autoscaling policies
+
+resource "aws_appautoscaling_target" "ecs_service_target" {
+  max_capacity       = 10 
+  min_capacity       = 1 
+  resource_id        = "service/${aws_ecs_cluster.EcsCluster.name}/${aws_ecs_service.ECSService.name}"
+  scalable_dimension = "ecs:service:DesiredCount"
+  service_namespace  = "ecs"
+}
+
+resource "aws_appautoscaling_policy" "ecs_target_tracking_policy" {
+  name               = "ecs-target-tracking"
+  service_namespace  = "ecs"
+  resource_id        = aws_appautoscaling_target.ecs_service_target.resource_id
+  scalable_dimension = aws_appautoscaling_target.ecs_service_target.scalable_dimension
+  policy_type        = "TargetTrackingScaling"
+
+  target_tracking_scaling_policy_configuration {
+    target_value       = 67.5  
+    predefined_metric_specification {
+      predefined_metric_type = "ECSServiceAverageCPUUtilization"
+    }
+    scale_in_cooldown  = 300 
+    scale_out_cooldown = 300 
   }
 }
